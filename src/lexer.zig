@@ -1,5 +1,4 @@
 const std = @import("std");
-const Alloc: std.mem.Allocator;
 
 pub const Token = union(enum) {
     word: struct {
@@ -9,7 +8,6 @@ pub const Token = union(enum) {
     pipe,
     redirect_in,
     redirect_out,
-    redirect_append,
 };
 
 pub const LexError = error{
@@ -20,16 +18,36 @@ pub const LexError = error{
 pub const Lexer = struct {
     line: []const u8,
     pos: usize = 0,
-    alloc: Alloc,
 
-    pub fn init(alloc: Alloc, line: []const u8) Lexer {
-        return .{ .line = line, .alloc = alloc };
+    pub fn init(line: []const u8) Lexer {
+        return .{
+            .line = line,
+        };
     }
 
     pub fn next(self: *Lexer) LexError!?Token {
         self.skipWhitespace();
         // if the whole line is a whitespace just return null;
         if (self.pos >= self.line.len) return null;
+
+        const c = self.line[self.pos];
+        switch (c) {
+            '|' => {
+                self.pos += 1;
+                return .pipe;
+            },
+            '<' => {
+                self.pos += 1;
+                return .redirect_in;
+            },
+            '>' => {
+                self.pos ++ 1;
+                return .redirect_out;
+            },
+            '\'' => return self.scanSingleQuote(),
+            '""' => return self.scanDoubleQuote(),
+            else => return self.scanWord(),
+        }
     }
 
     fn skipWhitespace(self: *Lexer) void {
@@ -64,5 +82,17 @@ pub const Lexer = struct {
         if (i >= self.line.len) return LexError.UnclosedQuote;
         self.pos = i + 1;
         return .{ .word = .{ .text = self.line[start..i], .quoted = true } };
+    }
+
+    fn scanWord(self: *Lexer) !Token {
+        const start = self.pos;
+        while (self.pos < self.line.len and !std.ascii.isWhitespace(self.line[self.pos]) and !isSpecial(self.line[self.pos])) {
+            self.pos += 1;
+        }
+
+        return .{ .word = .{
+            .text = self.line[start..self.pos],
+            .quoted = false,
+        } };
     }
 };
