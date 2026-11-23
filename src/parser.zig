@@ -14,12 +14,14 @@ pub const Ast = struct {
 pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
     var lx = lexer.Lexer.init(line);
     var stmt = ast.Stmt{};
+    var commands: std.ArrayList(ast.Command) = .empty;
     var current = ast.Command.init();
     var seen_pipe = false;
 
     while (try lx.next()) |tok| switch (tok) {
         .word => |w| {
             if (seen_pipe) {
+                try commands.append(alloc, current);
                 current = ast.Command.init();
                 seen_pipe = false;
             }
@@ -31,8 +33,8 @@ pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
             if (current.args.items.len == 0) {
                 return ParseError.UnexpectedToken;
             }
-
-            try stmt.commands.append(alloc, current);
+            try commands.append(alloc, current);
+            current = ast.Command.init();
             seen_pipe = true;
         },
 
@@ -45,11 +47,18 @@ pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
         return ParseError.UnexpectedToken;
     }
 
-    if (stmt.commands.items.len == 0) {
+    if (commands.items.len == 0) {
+        if (current.argv.items.len == 0) {
+            return ParseError.UnexpectedToken;
+        }
+
+        return .{ .stmt = stmt };
+    }
+
+    if (current.argv.items.len == 0) {
         return ParseError.UnexpectedToken;
     }
 
-    try stmt.commands.append(alloc, current);
-
-    return .{ .stmt = stmt };
+    try commands.append(alloc, current);
+    return .{ .stmt = .{ .pipeline = .{ .commands = commands } } };
 }

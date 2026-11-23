@@ -21,7 +21,7 @@ pub const Command = struct {
 };
 
 pub const Pipeline = struct {
-    commnds: std.ArrayList(Command),
+    commands: std.ArrayList(Command),
 
     pub fn init() Pipeline {
         return .{ .commands = .empty };
@@ -38,9 +38,8 @@ pub const Ast = struct {
 };
 
 pub fn isEmpty(stmt: *const Stmt) bool {
-    if (stmt.simple.argv.items.len == 0 or stmt.pipeline.commnds.items.len == 0) {
-        return true;
-    }
-
-    return false;
+    return switch (stmt.*) {
+        .simple => |*cmd| cmd.argv.items.len == 0,
+        .pipeline => |*p| p.commands.items.len == 0,
+    };
 }
