@@ -13,7 +13,6 @@ pub const Ast = struct {
 
 pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
     var lx = lexer.Lexer.init(line);
-    var stmt = ast.Stmt{};
     var commands: std.ArrayList(ast.Command) = .empty;
     var current = ast.Command.init();
     var seen_pipe = false;
