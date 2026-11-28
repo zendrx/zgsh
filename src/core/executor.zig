@@ -29,8 +29,8 @@ fn execSimple(cmd: *const ast.Command, alloc: Alloc) ExecError!void {
             std.process.exit(127);
         };
     }
-
-    _ = std.os.linux.waitpid(pid, 0, 12);
+    const status: i32 = undefined;
+    _ = std.os.linux.waitpid(pid, &status, 12);
 }
 
 fn execPipe(p: *ast.Pipeline, alloc: Alloc) ExecError!void {
@@ -39,7 +39,13 @@ fn execPipe(p: *ast.Pipeline, alloc: Alloc) ExecError!void {
 
     const pipes = alloc.alloc([2]std.posix.fd_t, n - 1) catch return ExecError.OutOfMemory;
     for (pipes) |*pipe| {
-        pipe.* = std.os.linux.pipe();
+        const fds: [2]i32 = undefined;
+        const rc = std.os.linux.pipe2(fds, 0);
+        switch (std.posix.errno(rc)) {
+            .SUCCESS => {},
+            else => return error.SyscallFailed,
+        }
+        pipe.* = fds;
     }
 
     var pids = alloc.alloc(std.process.Child.Id, n) catch return ExecError.OutOfMemory;
@@ -48,7 +54,7 @@ fn execPipe(p: *ast.Pipeline, alloc: Alloc) ExecError!void {
         const pid = fork() catch return ExecError.ForkFailed;
         pids[i] = pid;
         if (pid == 0) {
-            runChild(cmds.len, i, pipes, argvz);
+            runChild(cmd.len, i, pipes, argvz);
             std.process.exit(127);
         }
     }
@@ -59,11 +65,12 @@ fn execPipe(p: *ast.Pipeline, alloc: Alloc) ExecError!void {
     }
 
     for (pids) |pid| {
-        _ = std.os.linux.waitpid(pid, 0, 0);
+        const stt: i32 = undefined;
+        _ = std.os.linux.waitpid(pid, &stt, 0);
     }
 }
 
-fn runChild(n: usize, i: usize, pipes: []const [2]std.posix.fd_t, argv: []const ?[*:0]const u8) noreturn {
+fn runChild(n: usize, i: usize, pipes: []const [2]std.posix.fd_t, argv: [*:null]const ?[*:0]const u8) noreturn {
     if (i > 0) {
         const read_end = pipes[i - 1][0];
         std.os.linux.dup2(read_end, std.posix.STDIN_FILENO) catch {
@@ -92,20 +99,22 @@ fn runChild(n: usize, i: usize, pipes: []const [2]std.posix.fd_t, argv: []const 
     unreachable;
 }
 
-fn fork() !std.process.Child.Id {
-    return std.os.linux.fork();
+fn fork() !i32 {
+    const rc = std.os.linux.fork();
+    switch (std.posix.errno(rc)) {
+        .SUCCESS => return @intCast(rc),
+        else => return ExecError.ForkFailed,
+    }
 }
 
 fn execvp(argv: []const ?[*:0]const u8) !void {
     //try std.os.linux.execve()
 }
 
-fn argvToz(alloc: Alloc, args: []const ast.Arg) ![]const ?[*:0]const u8 {
-    const argvz = try alloc.alloc(?[*:0]const u8, args.len + 1);
+fn argvToZ(alloc: Alloc, args: []const ast.Arg) ![*:null]const ?[*:0]const u8 {
+    const argvz = try alloc.allocSentinel(?[*:0]const u8, args.len, null);
     for (args, 0..) |arg, i| {
-        argvz[i] = (try alloc.dupe(u8, arg.text)).ptr;
+        argvz[i] = (try alloc.dupe(u8, arg.text, 0)).ptr;
     }
-
-    argvz[args.len] = null;
-    return argvz;
+    return argvz.ptr;
 }

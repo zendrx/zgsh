@@ -7,11 +7,7 @@ pub const ParseError = error{
     OutOfMemory,
 };
 
-pub const Ast = struct {
-    stmt: ast.Stmt,
-};
-
-pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
+pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!ast.Ast {
     var lx = lexer.Lexer.init(line);
     var commands: std.ArrayList(ast.Command) = .empty;
     var current = ast.Command.init();
@@ -29,7 +25,7 @@ pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
         },
 
         .pipe => {
-            if (current.args.items.len == 0) {
+            if (current.argv.items.len == 0) {
                 return ParseError.UnexpectedToken;
             }
             try commands.append(alloc, current);
@@ -37,8 +33,24 @@ pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
             seen_pipe = true;
         },
 
-        .redirect_in, .redirect_out => {
-            return ParseError.UnexpectedToken;
+        .redirect_in, .redirect_out, .redirect_append => {
+            if (seen_pipe) {
+                try commands.append(alloc, current);
+                current = ast.Command.init();
+                seen_pipe = false;
+            }
+
+            const kind: ast.Redirkind = switch (tok) {
+                .redirect_in => .input,
+                .redirect_out => .outut,
+                .redirect_append => .append,
+                else => unreachable,
+            };
+            try current.addRedir(.{
+                .fd = if (kind == .input) 0 orelse 1,
+                .kind = kind,
+                .path = tok.word.text,
+            }, alloc);
         },
     };
 
@@ -51,7 +63,7 @@ pub fn parse(line: []const u8, alloc: std.mem.Allocator) ParseError!Ast {
             return ParseError.UnexpectedToken;
         }
 
-        return .{ .stmt = stmt };
+        return .{ .stmt = .{ .simple = current } };
     }
 
     if (current.argv.items.len == 0) {

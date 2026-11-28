@@ -8,6 +8,7 @@ pub const Token = union(enum) {
     pipe,
     redirect_in,
     redirect_out,
+    redirect_append,
 };
 
 pub const LexError = error{
@@ -41,11 +42,15 @@ pub const Lexer = struct {
                 return .redirect_in;
             },
             '>' => {
-                self.pos ++ 1;
+                self.pos += 1;
+                if (self.pos < self.line.len and self.line[self.pos] == '>') {
+                    self.pos += 1;
+                    return .redirect_append;
+                }
                 return .redirect_out;
             },
             '\'' => return self.scanSingleQuote(),
-            '""' => return self.scanDoubleQuote(),
+            '"' => return self.scanDoubleQuote(),
             else => return self.scanWord(),
         }
     }
@@ -58,10 +63,7 @@ pub const Lexer = struct {
 
     fn isSpecial(c: u8) bool {
         //going to try a hacky way hip
-        if (c == '|' or c == '<' or c == '>') {
-            return true;
-        }
-        return false;
+        return c == '|' or c == '<' or c == '>';
     }
 
     fn scanSingleQuote(self: *Lexer) LexError!Token {
@@ -78,7 +80,7 @@ pub const Lexer = struct {
     fn scanDoubleQuote(self: *Lexer) LexError!Token {
         const start = self.pos + 1;
         var i = start;
-        while (i < self.line.len and self.line[i] != '""') : (i += 1) {}
+        while (i < self.line.len and self.line[i] != '"') : (i += 1) {}
         if (i >= self.line.len) return LexError.UnclosedQuote;
         self.pos = i + 1;
         return .{ .word = .{ .text = self.line[start..i], .quoted = true } };

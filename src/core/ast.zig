@@ -6,17 +6,31 @@ pub const Arg = struct {
     quoted: bool,
 };
 
+pub const RedirKind = enum {
+    input,
+    output,
+    append,
+};
+pub const Redirect = struct {
+    fd: u8,
+    kind: RedirKind,
+    path: []u8,
+};
+
 pub const Command = struct {
     argv: std.ArrayList(Arg),
-    //redirect_in: ?Redir = null,
-    // redirect_out: ?Redir = null,
+    redirs: std.ArrayList(Redirect),
 
     pub fn init() Command {
-        return .{ .argv = .empty };
+        return .{ .argv = .empty, .redirs = .empty };
     }
 
     pub fn addArg(self: *Command, arg: Arg, alloc: Alloc) !void {
         try self.argv.append(alloc, arg);
+    }
+
+    pub fn addRedir(self: *Command, r: Redirect, alloc: Alloc) !void {
+        try self.redirs.append(alloc, r);
     }
 };
 
